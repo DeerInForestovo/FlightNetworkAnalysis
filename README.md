@@ -6,6 +6,6 @@ Files:
 + ```network_build.py```: build the network
     + INPUT: ```data/airpors.data,data/routes.dat```, ref: https://openflights.org/data
     + OUTPUT: ```output/global_airline_network.gml```
-+ ```visualization.py```: visualize the network
++ ```visualization.py```: visualize the network with Plotly
     + INPUT: ```output/global_airline_network.gml```
     + OUTPUT: ```output/global_airline_network.html```
