@@ -11,4 +11,6 @@ Files:
 + ```analysis.py```: analysis and clustering
     + OUTPUT: ```output/top10_hubs.csv,output/centrality_metrics.csv```
 + ```clustering_visual.py```: visulize the clustering
-    + OUTPUT: ```global_airline_centrality_map.html```
+    + OUTPUT: ```output/global_airline_centrality_map.html```
++ ```attack.py```: simulate attacks
+    + OUTPUT: ```output/robustness_*```
