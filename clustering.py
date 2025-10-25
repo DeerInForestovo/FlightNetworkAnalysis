@@ -1,12 +1,11 @@
 import networkx as nx
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
-# ---------- Step 1: 载入网络和分析结果 ----------
 G = nx.read_gml("./output/global_airline_network.gml")
 centrality_df = pd.read_csv("./output/centrality_metrics.csv")
 
-# 将中心性信息添加回图节点
 for _, row in centrality_df.iterrows():
     node = str(row["Airport_ID"])
     if node in G.nodes:
@@ -15,19 +14,23 @@ for _, row in centrality_df.iterrows():
         G.nodes[node]["Closeness"] = row["Closeness"]
         G.nodes[node]["Eigenvector"] = row["Eigenvector"]
 
-# ---------- Step 2: 准备节点数据 ----------
-lats, lons, sizes, texts = [], [], [], []
+betweenness = centrality_df["Betweenness"]
+betweenness_scaled = np.log1p(betweenness * 1e4)
+
+lats, lons, sizes, colors, texts = [], [], [], [], []
 
 for node, data in G.nodes(data=True):
     lats.append(float(data.get("lat", 0)))
     lons.append(float(data.get("lon", 0)))
-    size = data.get("Degree", 1)
-    sizes.append(2 + size * 0.05)  # 调整比例
+    deg = data.get("Degree", 1)
+    sizes.append(3 + np.sqrt(deg) * 1.5)
+    colors.append(betweenness_scaled.loc[centrality_df["Airport_ID"].astype(str) == str(node)].values[0]
+                  if str(node) in centrality_df["Airport_ID"].astype(str).values
+                  else 0)
     texts.append(f"{data.get('name','Unknown')} ({data.get('country','')})<br>"
-                 f"Degree: {data.get('Degree',0)}<br>"
+                 f"Degree: {deg}<br>"
                  f"Betweenness: {data.get('Betweenness',0):.4f}")
 
-# ---------- Step 3: 准备航线（边） ----------
 edge_lats, edge_lons = [], []
 for u, v in G.edges():
     u_lat, u_lon = G.nodes[u]["lat"], G.nodes[u]["lon"]
@@ -35,7 +38,6 @@ for u, v in G.edges():
     edge_lats += [u_lat, v_lat, None]
     edge_lons += [u_lon, v_lon, None]
 
-# ---------- Step 4: 使用 Plotly 绘制 ----------
 edge_trace = go.Scattergeo(
     lon=edge_lons, lat=edge_lats,
     mode='lines',
@@ -48,13 +50,13 @@ node_trace = go.Scattergeo(
     mode='markers',
     marker=dict(
         size=sizes,
-        color=centrality_df["Betweenness"],
-        colorscale='YlOrRd',
-        cmin=centrality_df["Betweenness"].min(),
-        cmax=centrality_df["Betweenness"].max(),
-        colorbar=dict(title="Betweenness"),
-        line=dict(width=0.2, color='gray'),
-        opacity=0.8
+        color=colors,
+        colorscale='Turbo',
+        cmin=min(colors),
+        cmax=max(colors),
+        colorbar=dict(title="Log-scaled Betweenness"),
+        line=dict(width=0.3, color='gray'),
+        opacity=0.85
     ),
     text=texts,
     hoverinfo='text'
@@ -75,6 +77,5 @@ fig.update_layout(
     margin=dict(l=0, r=0, t=40, b=0)
 )
 
-# ---------- Step 5: 输出 HTML ----------
 fig.write_html("./output/global_airline_centrality_map.html")
 print("Visualization saved to ./output/global_airline_centrality_map.html")
