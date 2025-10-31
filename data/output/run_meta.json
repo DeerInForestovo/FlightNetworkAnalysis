@@ -1,0 +1,13 @@
+{
+  "BETWEENNESS_SAMPLE_K": 200,
+  "BETWEENNESS_SEED": 42,
+  "num_nodes_giant": 3188,
+  "num_edges_giant": 18833,
+  "basic_stats": {
+    "num_nodes": 3188,
+    "num_edges": 18833,
+    "avg_degree": 11.814930991217064,
+    "avg_clustering": 0.4928300852568965,
+    "avg_path_length": 3.9585303611479983
+  }
+}
