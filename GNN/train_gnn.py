@@ -1,3 +1,7 @@
+"""
+Train a Graph Neural Network (GraphSAGE) to predict betweenness in a flight network.
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,6 +20,12 @@ print("Loading data...")
 edge_index = torch.load(f"{DATA_DIR}/edge_index.pt").to(device)
 x = torch.load(f"{DATA_DIR}/features.pt").to(device)
 y = torch.load(f"{DATA_DIR}/labels.pt").to(device)
+
+# Save feature normalization statistics for inference-time consistency
+import os
+os.makedirs("./GNN/model", exist_ok=True)
+torch.save(x.mean(dim=0).cpu(), "./GNN/model/feature_mean.pt")
+torch.save(x.std(dim=0).cpu(), "./GNN/model/feature_std.pt")
 
 x = (x - x.mean(dim=0)) / (x.std(dim=0) + 1e-6)
 
@@ -51,7 +61,7 @@ optimizer = optim.Adam(model.parameters(), lr=0.01)
 loss_fn = nn.MSELoss()
 
 print("\nStarting training...")
-for epoch in range(20001):
+for epoch in range(10001):
     model.train()
     optimizer.zero_grad()
     
