@@ -15,15 +15,24 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 GRAPH_PATH = "./output/global_airline_network.gml"
 MODEL_PATH = "./GNN/model/graphsage.pt"
 
-REMOVE_RATIO = 0.02   # 2% nodes removed
+REMOVE_RATIO = 0.01   # 1% nodes removed
 TOPK = 50
+REMOVE_HUB = True
 
 print("\nLoading original graph...")
 G = nx.read_gml(GRAPH_PATH)
 
 nodes = list(G.nodes())
 num_remove = int(len(nodes) * REMOVE_RATIO)
-remove_nodes = random.sample(nodes, num_remove)
+
+if REMOVE_HUB:
+    print(">> Removing HUB nodes (by degree)")
+    degree_dict = dict(G.degree())
+    sorted_nodes = sorted(degree_dict, key=degree_dict.get, reverse=True)
+    remove_nodes = sorted_nodes[:num_remove]
+else:
+    print(">> Removing RANDOM nodes")
+    remove_nodes = random.sample(nodes, num_remove)
 
 print(f"Removing {num_remove} nodes (2%) to simulate perturbation...")
 G.remove_nodes_from(remove_nodes)
