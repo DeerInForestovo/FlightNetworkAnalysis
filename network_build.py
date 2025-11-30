@@ -1,3 +1,7 @@
+"""
+Build and analyze the global airline network from OpenFlights data.
+"""
+
 import pandas as pd
 import networkx as nx
 import numpy as np

@@ -1,20 +1,56 @@
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.2
+aiosignal==1.4.0
+attrs==25.4.0
+brotlicffi @ file:///home/task_176295012226420/conda-bld/brotlicffi_1762950227973/work
+certifi @ file:///home/task_176313478881058/conda-bld/certifi_1763135330066/work/certifi
+cffi @ file:///home/task_176183215235376/conda-bld/cffi_1761832773734/work
+charset-normalizer @ file:///home/task_176174480956840/conda-bld/charset-normalizer_1761744822896/work
 contourpy==1.3.2
 cycler==0.12.1
+filelock @ file:///home/task_176241979116072/conda-bld/filelock_1762419845875/work
 fonttools==4.60.0
+frozenlist==1.8.0
+fsspec==2025.10.0
+gmpy2 @ file:///croot/gmpy2_1738085463648/work
+idna @ file:///home/task_176191178300919/conda-bld/idna_1761911982343/work
+Jinja2 @ file:///croot/jinja2_1741710844255/work
 kiwisolver==1.4.9
+MarkupSafe @ file:///croot/markupsafe_1738584038848/work
 matplotlib==3.10.6
-mpmath==1.3.0
+mkl-fft==1.3.1
+mkl-random @ file:///work/ci_py311/mkl_random_1676828032909/work
+mkl-service==2.4.0
+mpmath @ file:///croot/mpmath_1690848262763/work
+multidict==6.7.0
 narwhals==2.9.0
-networkx==3.4.2
+networkx @ file:///croot/networkx_1737039604450/work
 numpy==2.2.6
 packaging==25.0
 pandas==2.3.3
 pillow==11.3.0
 plotly==6.3.1
 powerlaw==1.5
+propcache==0.4.1
+psutil==7.1.3
+pycparser @ file:///home/task_175749606196006/conda-bld/pycparser_1757496076770/work
 pyparsing==3.2.5
+PySocks @ file:///home/task_176175228059944/conda-bld/pysocks_1761753009523/work
 python-dateutil==2.9.0.post0
 pytz==2025.2
+PyYAML @ file:///home/task_176346545528585/conda-bld/pyyaml_1763465495007/work
+requests @ file:///home/task_176235919505742/conda-bld/requests_1762359593170/work
 scipy==1.15.3
-six==1.17.0
+six @ file:///croot/six_1744271502820/work
+sympy @ file:///croot/sympy_1756713465822/work
+torch==2.5.1
+torch-geometric==2.7.0
+torchaudio==2.5.1
+torchvision==0.20.1
+tqdm==4.67.1
+triton==3.1.0
+typing_extensions @ file:///croot/typing_extensions_1756280817316/work
 tzdata==2025.2
+urllib3 @ file:///croot/urllib3_1750775463400/work
+xxhash==3.6.0
+yarl==1.22.0

@@ -1,3 +1,7 @@
+"""
+Visualization of the global airline network with centrality metrics.
+"""
+
 import networkx as nx
 import pandas as pd
 import plotly.graph_objects as go

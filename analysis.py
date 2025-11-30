@@ -1,3 +1,8 @@
+"""
+Basic analysis of the global airline network.
+For phase 1 of the project.
+"""
+
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt

@@ -1,3 +1,7 @@
+"""
+Visualization of the global airline network.
+"""
+
 import plotly.graph_objects as go
 import networkx as nx
 import pandas as pd

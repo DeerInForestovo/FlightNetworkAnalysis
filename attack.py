@@ -1,3 +1,10 @@
+"""
+Basic network robustness simulation:
+This script simulates random and targeted node removals on the global airline network.
+However, the "betweenness" computations are very slow for large graphs, so we have to
+use GNN-based approximations instead in phase 2.
+"""
+
 # robustness_simulation.py
 import networkx as nx
 import pandas as pd
