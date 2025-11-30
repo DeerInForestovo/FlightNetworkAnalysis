@@ -15,6 +15,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 GRAPH_PATH = "./output/global_airline_network.gml"
 MODEL_PATH = "./GNN/model/graphsage.pt"
 
+KEEP_TOP_RATIO = 0.01
+SECOND_REMOVE_RATIO = 0.1
+TARGETED_AFTER_KEEP = True
+
 REMOVE_RATIO = 0.01   # 1% nodes removed
 TOPK = 50
 REMOVE_HUB = True
@@ -25,10 +29,25 @@ G = nx.read_gml(GRAPH_PATH)
 nodes = list(G.nodes())
 num_remove = int(len(nodes) * REMOVE_RATIO)
 
-if REMOVE_HUB:
+degree_dict = dict(G.degree())
+sorted_nodes = sorted(degree_dict, key=degree_dict.get, reverse=True)
+
+if TARGETED_AFTER_KEEP:
+    print(">> Keep top 1% hubs, then remove top 2% from remaining nodes")
+
+    keep_num = int(len(nodes) * KEEP_TOP_RATIO)
+    remove_num = int(len(nodes) * SECOND_REMOVE_RATIO)
+
+    kept_nodes = set(sorted_nodes[:keep_num])
+    remaining_nodes = [n for n in sorted_nodes if n not in kept_nodes]
+
+    remove_nodes = remaining_nodes[:remove_num]
+
+    print(f"Keeping {keep_num} nodes")
+    print(f"Removing {len(remove_nodes)} nodes (from remaining set)")
+
+elif REMOVE_HUB:
     print(">> Removing HUB nodes (by degree)")
-    degree_dict = dict(G.degree())
-    sorted_nodes = sorted(degree_dict, key=degree_dict.get, reverse=True)
     remove_nodes = sorted_nodes[:num_remove]
 else:
     print(">> Removing RANDOM nodes")
