@@ -17,21 +17,20 @@ from torch_geometric.utils import to_undirected
 
 
 # ---------------------------------------------------
-# 1. 读取 GML 并只保留最大连通分量（孤立点去掉）
+# 1. Read GML and keep only the largest connected component (drop isolated nodes)
 # ---------------------------------------------------
 def load_airline_graph(path: str) -> nx.Graph:
-    # 读 GML
+    # Read GML
     G = nx.read_gml(path)
 
-    # 如果原图是有向 / MultiGraph，这里统一成无向简单图
+    # If the original graph is directed / MultiGraph, convert to a simple undirected graph
     G = nx.Graph(G)
 
-
-    # 只保留最大连通分量（自动去掉孤立节点）
+    # Keep only the largest connected component (automatically removes isolated nodes)
     cc = max(nx.connected_components(G), key=len)
     G = G.subgraph(cc).copy()
     
-    # 重新编号成 0..N-1，原来的 id 存到 old_id 属性
+    # Relabel nodes to 0..N-1, store original id in attribute "old_id"
     G = nx.convert_node_labels_to_integers(G, label_attribute="old_id")
 
     print(f"Loaded graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
@@ -39,12 +38,12 @@ def load_airline_graph(path: str) -> nx.Graph:
 
 
 # ---------------------------------------------------
-# 2. 构建节点特征：lat, lon, one-hot(country)
+# 2. Build node features: xyz (from lat/lon), one-hot(country) + structural stats
 # ---------------------------------------------------
 def build_features(G: nx.Graph):
     """
-    每个节点特征：
-    - x, y, z（由 lat, lon 转成单位球坐标）
+    Per-node features include:
+    - x, y, z (3D coordinates on the unit sphere converted from lat, lon)
     - country one-hot
     - degree
     - weighted_degree
@@ -54,19 +53,19 @@ def build_features(G: nx.Graph):
     - domestic_routes
     - total_mileage (sum(weight * distance))
 
-    并对连续特征做 log/标准化。
+    Continuous features are log-transformed / (optionally) normalized.
     """
     import numpy as np
     import networkx as nx
 
     num_nodes = G.number_of_nodes()
 
-    # ==== 1) 国家 one-hot ====
+    # ==== 1) Country one-hot ====
     countries = sorted({data["country"] for _, data in G.nodes(data=True)})
     country_to_idx = {c: i for i, c in enumerate(countries)}
     num_countries = len(countries)
 
-    # ==== 2) 图结构统计量 ====
+    # ==== 2) Graph structural statistics ====
     degrees = dict(G.degree())
     weighted_degrees = dict(G.degree(weight="weight"))
     clustering = nx.clustering(G)
@@ -80,10 +79,10 @@ def build_features(G: nx.Graph):
         cu = G.nodes[u].get("country")
         cv = G.nodes[v].get("country")
 
-        w = float(data.get("weight", 1.0))        # 无向图很多是 2（往返）
+        w = float(data.get("weight", 1.0))        # In this undirected graph many routes have weight=2 (two directions)
         d = float(data.get("distance", 0.0))
 
-        # 国际/国内航线数量（按边条数计，不按 weight）
+        # Count domestic / international routes by edge count (not by weight)
         if cu is not None and cv is not None and cu == cv:
             domestic_count[u] += 1.0
             domestic_count[v] += 1.0
@@ -91,25 +90,25 @@ def build_features(G: nx.Graph):
             international_count[u] += 1.0
             international_count[v] += 1.0
 
-        # 总里程数：weight * distance，两端节点都加
+        # Total mileage: weight * distance, added to both endpoints
         miles = w * d
         total_mileage[u] += miles
         total_mileage[v] += miles
 
-    # ==== 3) 构建特征矩阵 ====
-    # 3 (x,y,z) + num_countries (one-hot) + 7 结构特征
+    # ==== 3) Build feature matrix ====
+    # 3 (x,y,z) + num_countries (one-hot) + 7 structural features
     feat_dim = 3 + num_countries + 7
     X = np.zeros((num_nodes, feat_dim), dtype=np.float32)
 
     for node, data in G.nodes(data=True):
         idx = int(node)
 
-        lat = float(data.get("lat", 0.0))   # 单位：度
-        lon = float(data.get("lon", 0.0))   # 单位：度
+        lat = float(data.get("lat", 0.0))   # degrees
+        lon = float(data.get("lon", 0.0))   # degrees
         country = data["country"]
         c_idx = country_to_idx[country]
 
-        # ---- 经纬 -> 球面坐标 (单位球上的 x,y,z) ----
+        # ---- lat/lon -> spherical coordinates (unit sphere x,y,z) ----
         lat_rad = np.deg2rad(lat)
         lon_rad = np.deg2rad(lon)
         x = np.cos(lat_rad) * np.cos(lon_rad)
@@ -122,11 +121,11 @@ def build_features(G: nx.Graph):
         X[idx, offset] = y; offset += 1
         X[idx, offset] = z; offset += 1
 
-        # 国家 one-hot
+        # Country one-hot
         X[idx, offset + c_idx] = 1.0
         offset += num_countries
 
-        # 图特征
+        # Graph-related features
         X[idx, offset] = degrees[node];             offset += 1
         X[idx, offset] = weighted_degrees[node];    offset += 1
         X[idx, offset] = clustering[node];          offset += 1
@@ -135,14 +134,14 @@ def build_features(G: nx.Graph):
         X[idx, offset] = domestic_count[node];      offset += 1
         X[idx, offset] = total_mileage[node];       offset += 1
 
-    # ==== 4) 连续特征做 log/标准化 ====
-    # 连续特征列：x, y, z, degree, w_degree, clustering, core, intl, dom, total_mileage
+    # ==== 4) Log-transform / (optional) standardize continuous features ====
+    # Continuous feature indices: x, y, z, degree, w_degree, clustering, core, intl, dom, total_mileage
     cont_idx = []
 
     # x, y, z
     cont_idx.extend([0, 1, 2])
 
-    # 后面 7 个结构特征起始位置
+    # Start index of 7 structural features
     base = 3 + num_countries
     idx_degree = base + 0
     idx_wdegree = base + 1
@@ -152,7 +151,7 @@ def build_features(G: nx.Graph):
     idx_dom = base + 5
     idx_miles = base + 6
 
-    # 对“计数/大数”先 log1p
+    # For counts / large values, apply log1p
     for k in [idx_degree, idx_wdegree, idx_intl, idx_dom, idx_miles]:
         X[:, k] = np.log1p(X[:, k])
 
@@ -161,7 +160,7 @@ def build_features(G: nx.Graph):
 
     cont_idx = np.array(cont_idx, dtype=int)
 
-    # # 标准化：减均值 / 除标准差
+    # # Standardization: subtract mean / divide by std
     # mu = X[:, cont_idx].mean(axis=0)
     # sigma = X[:, cont_idx].std(axis=0) + 1e-6
     # X[:, cont_idx] = (X[:, cont_idx] - mu) / sigma
@@ -174,7 +173,7 @@ def build_features(G: nx.Graph):
 
 # ---------------------------------------------------
 # 3. NetworkX -> PyG Data
-#    edge_attr 中保存 [weight, distance]（暂时不用）
+#    edge_attr stores [weight, distance] (not used yet)
 # ---------------------------------------------------
 def graph_to_pyg(G: nx.Graph, x: torch.Tensor) -> Data:
     # edge_index: shape [2, E]
@@ -182,10 +181,10 @@ def graph_to_pyg(G: nx.Graph, x: torch.Tensor) -> Data:
     edge_index = torch.from_numpy(edges)
     edge_index = to_undirected(edge_index, num_nodes=x.size(0))
 
-    # 把 weight 和 distance 存到 edge_attr（方便以后用加权 GCN）
+    # Store weight and distance into edge_attr (for potential weighted GCN usage)
     w_list = []
     d_list = []
-    # 注意：G.edges() 只给每条边一次（u<v）
+    # Note: G.edges() gives each edge once (u < v)
     for u, v in G.edges():
         data = G[u][v]
         w_list.append(float(data.get("weight", 1.0)))
@@ -193,16 +192,16 @@ def graph_to_pyg(G: nx.Graph, x: torch.Tensor) -> Data:
     edge_weight = torch.tensor(w_list, dtype=torch.float32)
     edge_distance = torch.tensor(d_list, dtype=torch.float32)
 
-    # 由于我们用 to_undirected，会复制边，因此也复制属性
+    # Because we use to_undirected, we need to duplicate attributes
     edge_attr = torch.stack([edge_weight, edge_distance], dim=1)
-    edge_attr = torch.cat([edge_attr, edge_attr], dim=0)  # 对称边
+    edge_attr = torch.cat([edge_attr, edge_attr], dim=0)  # symmetric edges
 
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
     return data
 
 
 # ---------------------------------------------------
-# 4. GCN 编码器 + 内积解码器
+# 4. GCN encoder + dot-product decoder
 # ---------------------------------------------------
 class GCNEncoder(nn.Module):
     def __init__(self, in_channels, hidden_channels, num_layers=3, dropout=0.1):
@@ -220,16 +219,16 @@ class GCNEncoder(nn.Module):
     def forward(self, x, edge_index):
         for i, conv in enumerate(self.convs):
             x = conv(x, edge_index)
-            if i != len(self.convs) - 1:  # 最后一层一般不再 ReLU
+            if i != len(self.convs) - 1:  # usually no ReLU on the last layer
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
-        return x  # 节点嵌入 z
+        return x  # node embeddings z
 
 
 
 def decode_dot(z, edge_index):
     """
-    内积解码器：给定 z 和若干 (u, v)，输出 logit 得分
+    Inner-product decoder: given z and a set of (u, v), output logit scores
     edge_index: [2, num_edges]
     """
     src = z[edge_index[0]]
@@ -255,15 +254,17 @@ def eval_link_pred(model, data, device):
     auc = roc_auc_score(labels, prob)
     ap = average_precision_score(labels, prob)
     return auc, ap
+
+
 # ---------------------------------------------------
-# 5.1 构造 weight 回归的标签（正边用 G 里的 weight，负边=0）
+# 5.1 Build weight regression targets (positive edges: G[u][v]['weight'], negative: 0)
 # ---------------------------------------------------
 def build_edge_weight_targets(G, edge_label_index, edge_label, device, log_target=True):
     """
-    对于 edge_label_index 中的每条 (u, v)：
-      - 如果 edge_label = 1，则从 G[u][v]['weight'] 里取真实权重
-      - 如果 edge_label = 0，则权重 = 0
-    如果 log_target=True，则返回 log(1 + weight)，方便回归训练
+    For each (u, v) in edge_label_index:
+      - if edge_label = 1, use G[u][v]['weight'] as the ground-truth weight
+      - if edge_label = 0, use weight = 0
+    If log_target=True, return log(1 + weight) for regression.
     """
     src = edge_label_index[0].cpu().numpy()
     dst = edge_label_index[1].cpu().numpy()
@@ -274,22 +275,23 @@ def build_edge_weight_targets(G, edge_label_index, edge_label, device, log_targe
         if lbl[k] > 0.5:
             u = int(src[k])
             v = int(dst[k])
-            w = float(G[u][v].get("weight", 1.0))  # 正边从图上取 weight
+            w = float(G[u][v].get("weight", 1.0))  # positive edges take weight from the graph
             weights[k] = w
         else:
-            weights[k] = 0.0                        # 负边权重=0
+            weights[k] = 0.0                        # negative edges have weight=0
 
     if log_target:
         weights = np.log1p(weights)                # log(1 + w)
 
     return torch.from_numpy(weights).to(device)
 
+
 @torch.no_grad()
 def eval_weight(model, data, device, G, log_target=True):
     """
-    weight 回归的评估：
-      - MSE / MAE （在 log(1+w) 空间上）
-      - 额外给一个基于 pred 的存在性 AUC（把 >0 当成“有边”）
+    Evaluation for weight regression:
+      - MSE / MAE (in log(1+w) space)
+      - additionally, an existence AUC using prediction as a proxy (values > 0 as "edge exists")
     """
     model.eval()
     x = data.x.to(device)
@@ -306,38 +308,39 @@ def eval_weight(model, data, device, G, log_target=True):
     mse = F.mse_loss(pred, target).item()
     mae = F.l1_loss(pred, target).item()
 
-    # 用预测的 log(1+w_hat) 做 existence AUC（正边 log(1+w)>0，负边=0）
+    # Use predicted log(1+w_hat) for existence AUC (positive edges have log(1+w)>0, negatives=0)
     labels_exist = edge_label.cpu().numpy()
     pred_np = pred.detach().cpu().numpy()
     try:
         auc = roc_auc_score(labels_exist, pred_np)
     except ValueError:
-        auc = float("nan")  # 极端情况下（全1/全0）AUC 可能算不出来
+        auc = float("nan")  # In corner cases (all-1 or all-0), AUC may not be defined
 
     return mse, mae, auc
+
 
 def build_candidate_pairs(
     G,
     xyz,
     sp_length,
-    min_geo_km=None,   # 地理距离下限（太近的不考虑）
-    max_geo_km=None,   # 地理距离上限（太远的不考虑）
-    min_sp=None,       # 最短路径长度下限（比如 3：只考虑 A–B–C–D → A–D）
-    max_sp=None,       # 最短路径长度上限
-    same_country=None, # True: 只国内; False: 只国际; None: 不限制
+    min_geo_km=None,   # minimum geographic distance (too close -> skip)
+    max_geo_km=None,   # maximum geographic distance (too far -> skip)
+    min_sp=None,       # minimum shortest-path distance (e.g., 3 to target A–B–C–D → A–D)
+    max_sp=None,       # maximum shortest-path distance
+    same_country=None, # True: only domestic; False: only international; None: no constraint
 ):
     """
-    返回候选节点对列表 [(i, j), ...]，i < j 且目前 G 中没有边。
+    Return a list of candidate node pairs [(i, j), ...], with i < j and no existing edge in G.
     """
     nodes = list(G.nodes())
     n = len(nodes)
-    node_to_idx = {u: int(u) for u in nodes}  # 这里节点本来就应该是 0..N-1
+    node_to_idx = {u: int(u) for u in nodes}  # here nodes are already 0..N-1
 
     def geo_dist_km(i, j):
-        # xyz 在单位球上；弦长 ~ chord distance
+        # xyz are on unit sphere; chord length approximates great-circle distance
         vi = xyz[i]
         vj = xyz[j]
-        # 夹角 = arccos( dot )
+        # angle = arccos(dot)
         dot = float(np.clip(np.dot(vi, vj), -1.0, 1.0))
         angle = math.acos(dot)
         R_earth = 6371.0  # km
@@ -352,13 +355,13 @@ def build_candidate_pairs(
             is_same = None
             d_geo = None
             
-            # 已经有边就跳过
+            # skip if edge already exists
             if G.has_edge(u, v):
                 continue
 
-            # === 最短路径长度筛选 ===
+            # === Shortest-path length filter ===
             if min_sp is not None or max_sp is not None:
-                # 如果 cutoff 太小，可能拿不到某些 dist
+                # If cutoff is too small, some distances may be missing
                 d = None
                 if v in sp_length.get(u, {}):
                     d = sp_length[u][v]
@@ -366,7 +369,7 @@ def build_candidate_pairs(
                     d = sp_length[v][u]
 
                 if d is None:
-                    # 没有路径 or 路径长度 > cutoff，当成太远，直接跳过
+                    # no path or path length > cutoff → skip
                     continue
 
                 if min_sp is not None and d < min_sp:
@@ -374,12 +377,12 @@ def build_candidate_pairs(
                 if max_sp is not None and d > max_sp:
                     continue
 
-            # === 国家关系筛选（国内/国际） ===
+            # === Country relation filter (domestic/international) ===
             if same_country is not None:
                 cu = G.nodes[u].get("country")
                 cv = G.nodes[v].get("country")
                 if cu is None or cv is None:
-                    # 缺失信息就跳过（你也可以选择保留）
+                    # drop nodes with missing country information (could also keep them if desired)
                     continue
                 is_same = (cu == cv)
                 if same_country is True and not is_same:
@@ -387,7 +390,7 @@ def build_candidate_pairs(
                 if same_country is False and is_same:
                     continue
 
-            # === 地理距离筛选 ===
+            # === Geographic distance filter ===
             if min_geo_km is not None or max_geo_km is not None:
                 d_geo = geo_dist_km(i, j)
                 if min_geo_km is not None and d_geo < min_geo_km:
@@ -398,8 +401,11 @@ def build_candidate_pairs(
             candidates.append((i, j, d, is_same, d_geo))
 
     return candidates
+
+
 # ---------------------------------------------------
-# 6. 在整张图上找“高分缺失边”（支持存在性 / weight 两种模式）
+# 6. On the full graph, search for high-scoring missing edges
+#    (supports both existence and weight modes)
 # ---------------------------------------------------
 @torch.no_grad()
 def suggest_missing_edges_filtered(
@@ -413,19 +419,19 @@ def suggest_missing_edges_filtered(
     min_sp=None,
     max_sp=None,
     same_country=None,
-    mode="exist",  # "exist"：存在性，"weight"：预测权重
+    mode="exist",  # "exist": edge existence, "weight": edge weight regression
 ):
     model.eval()
     x = full_data.x.to(device)
     ei = full_data.edge_index.to(device)
 
     z = model(x, ei).cpu()      # [N, d]
-    xyz = full_data.x[:, :3].cpu().numpy()  # 假设前 3 维是 xyz
+    xyz = full_data.x[:, :3].cpu().numpy()  # assume first 3 dims are xyz
 
-    # 预先算 shortest path（只算一次，可以挪到 main 里缓存）
+    # Pre-compute shortest paths (compute once; could be cached in main if needed)
     sp_length = dict(nx.all_pairs_shortest_path_length(G, cutoff=5))
 
-    # 构造候选边集合
+    # Build candidate set
     candidates = build_candidate_pairs(
         G,
         xyz,
@@ -439,12 +445,12 @@ def suggest_missing_edges_filtered(
 
     print(f"Candidate pairs after filtering: {len(candidates)}")
 
-    # 对这些候选对打分
+    # Score candidate pairs
     scored = []
     for i, j, d, is_same, d_geo in candidates:
         zi = z[i]
         zj = z[j]
-        score = float((zi * zj).sum())  # 对应 decode_dot 的输出
+        score = float((zi * zj).sum())  # matches decode_dot
 
         nu = G.nodes[i]
         nv = G.nodes[j]
@@ -454,7 +460,7 @@ def suggest_missing_edges_filtered(
         country_v = nv.get("country", "")
 
         if mode == "exist":
-            prob = 1.0 / (1.0 + math.exp(-score))   # logit -> 概率
+            prob = 1.0 / (1.0 + math.exp(-score))   # logit -> probability
             entry = {
                 "u": i,
                 "v": j,
@@ -470,8 +476,8 @@ def suggest_missing_edges_filtered(
                 "distance": d_geo,
             }
         elif mode == "weight":
-            # score 视为预测的 log(1 + w_hat)
-            # 为了安全，clip 一下，避免 exp 爆炸
+            # Interpret score as predicted log(1 + w_hat)
+            # Clip to avoid overflow in exp
             logw = max(score, 0.0)
             w_hat = math.exp(logw) - 1.0
             entry = {
@@ -493,14 +499,15 @@ def suggest_missing_edges_filtered(
 
         scored.append(entry)
 
-    # 按 score 降序取 top_k（score 对存在性和 log(1+w) 都是单调的）
+    # Sort by score in descending order and take top_k
+    # (score is monotonic for both existence and log(1+w))
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:top_k]
 
 
 
 # ---------------------------------------------------
-# 7. 主流程
+# 7. Main
 # ---------------------------------------------------
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -513,7 +520,7 @@ def main(args):
     else:  # "diff"
         same_country_flag = False
         
-    # # 1) 读图并构建特征
+    # 1) Read graph and build features
     G = load_airline_graph(args.gml_path)
     x, countries, country_to_idx = build_features(G)
     data_full = graph_to_pyg(G, x)
@@ -521,16 +528,16 @@ def main(args):
     model = GCNEncoder(
         in_channels=data_full.num_features,
         hidden_channels=args.hidden_dim,
-        num_layers=args.layers,        # 改成 3 或 4 都可以
+        num_layers=args.layers,        # can be 3 or 4
         dropout=0.1,
     ).to(device)
     
     if args.task == "exist":
-        print("Task = exist (边存在性预测)")
+        print("Task = exist (edge existence prediction)")
         model.load_state_dict(torch.load("./GCN/model/GCNEncoder_exist.pt"))
         model.eval()
 
-        # 5) 在整图上找“潜在应存在的边”
+        # Find potentially missing edges that should exist
         top_edges = suggest_missing_edges_filtered(
             model,
             data_full,
@@ -573,11 +580,11 @@ def main(args):
             )
 
     else:  # args.task == "weight"
-        print("Task = weight (边权重回归)")
+        print("Task = weight (edge weight regression)")
         model.load_state_dict(torch.load("./GCN/model/GCNEncoder_weight.pt"))
         model.eval()
 
-        # 5) 在整图上找“潜在权重很大的缺失边”
+        # Find missing edges with large predicted weight
         top_edges = suggest_missing_edges_filtered(
             model,
             data_full,
@@ -634,20 +641,43 @@ if __name__ == "__main__":
     parser.add_argument("--hidden-dim", type=int, default=64)
     parser.add_argument("--layers", type=int, default=4)
     parser.add_argument("--top-k", type=int, default=20)
-    parser.add_argument("--task", type=str, default="exist",
-                    choices=["exist", "weight"],
-                    help="exist: 边存在性预测; weight: 边权重回归")
-    parser.add_argument("--min-geo-km", type=float, default=100.0,
-                        help="候选边最小地理距离（km），例如 100km 避免同城机场。")
-    parser.add_argument("--max-geo-km", type=float, default=5000.0,
-                        help="候选边最大地理距离（km），默认5000km。")
-    parser.add_argument("--min-sp", type=int, default=1,
-                        help="候选边最短路径长度下限（基于现有图），例如 3 表示 A-B-C-D -> A-D。")
-    parser.add_argument("--max-sp", type=int, default=4,
-                        help="候选边最短路径长度上限。")
-    parser.add_argument("--same-country", type=str, default="any",
-                        choices=["any", "same", "diff"],
-                        help="候选边是否限制国家关系："
-                             "'any' 不限制, 'same' 只考虑国内航线, 'diff' 只考虑国际航线。")
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="exist",
+        choices=["exist", "weight"],
+        help="exist: edge existence prediction; weight: edge weight regression",
+    )
+    parser.add_argument(
+        "--min-geo-km",
+        type=float,
+        default=100.0,
+        help="Minimum geographic distance (km) for candidate edges, e.g., 100km to avoid same-city airports.",
+    )
+    parser.add_argument(
+        "--max-geo-km",
+        type=float,
+        default=5000.0,
+        help="Maximum geographic distance (km) for candidate edges, default 5000km.",
+    )
+    parser.add_argument(
+        "--min-sp",
+        type=int,
+        default=1,
+        help="Lower bound on shortest-path length in the existing graph, e.g., 3 means A-B-C-D -> A-D.",
+    )
+    parser.add_argument(
+        "--max-sp",
+        type=int,
+        default=4,
+        help="Upper bound on shortest-path length.",
+    )
+    parser.add_argument(
+        "--same-country",
+        type=str,
+        default="any",
+        choices=["any", "same", "diff"],
+        help="Whether to constrain country relation for candidate edges: 'any' no constraint; 'same' only domestic; 'diff' only international.",
+    )
     args = parser.parse_args()
     main(args)
